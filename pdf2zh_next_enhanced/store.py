@@ -16,6 +16,8 @@ import fitz
 
 from .crypto import decrypt_text
 from .crypto import encrypt_text
+from .file_validation import PDF_SIGNATURE
+from .file_validation import validate_retry_source_file
 from .paths import ARTIFACTS_DIR
 from .paths import DATABASE_PATH
 from .paths import DEFAULT_TIMEOUT_SECONDS
@@ -781,9 +783,15 @@ class AppStore:
         bundle = self.get_job_bundle(job_id)
         new_job_id = str(uuid.uuid4())
         now = to_iso()
+        options = loads(bundle.job["options_json"], {})
+        for file_row in bundle.files:
+            original_path = Path(file_row["storage_path"])
+            with original_path.open("rb") as handle:
+                header = handle.read(len(PDF_SIGNATURE))
+            validate_retry_source_file(file_row["original_name"], header)
+
         new_upload_dir = UPLOADS_DIR / new_job_id
         new_upload_dir.mkdir(parents=True, exist_ok=True)
-        options = loads(bundle.job["options_json"], {})
         with self.connect() as conn:
             conn.execute(
                 """

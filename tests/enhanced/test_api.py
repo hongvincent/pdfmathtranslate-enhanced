@@ -5,6 +5,8 @@ import json
 
 from fastapi.testclient import TestClient
 from pdf2zh_next_enhanced.api import create_app
+from pdf2zh_next_enhanced.schemas import JobCreatePayload
+from pdf2zh_next_enhanced.schemas import OpenAIProfileInput
 from pdf2zh_next_enhanced.store import AppStore
 
 from .test_store import _make_pdf
@@ -190,3 +192,23 @@ def test_job_submission_rejects_docx_upload(tmp_path, monkeypatch):
 
     assert response.status_code == 400
     assert "DOCX file" in response.json()["detail"]
+
+
+def test_retry_rejects_legacy_docx_job(tmp_path, monkeypatch):
+    database_path = _patch_data_paths(tmp_path, monkeypatch)
+    client = TestClient(create_app())
+    store = AppStore(database_path)
+    profile = store.save_provider_profile(
+        OpenAIProfileInput(
+            name="Legacy DOCX",
+            model="gpt-5.4",
+            api_key="sk-legacy-docx",
+        )
+    )
+    legacy_docx = _make_pdf(tmp_path / "legacy.docx")
+    legacy_job, _ = store.create_job(JobCreatePayload(profile_id=profile.id), [legacy_docx])
+
+    response = client.post(f"/api/jobs/{legacy_job.id}/retry")
+
+    assert response.status_code == 400
+    assert "cannot be retried" in response.json()["detail"]

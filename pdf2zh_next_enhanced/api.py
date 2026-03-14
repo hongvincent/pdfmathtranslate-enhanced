@@ -22,6 +22,8 @@ from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 
 from . import paths
+from .file_validation import UnsupportedInputError
+from .file_validation import validate_uploaded_file
 from .providers import validate_profile
 from .schemas import ArtifactKind
 from .schemas import JobCreatePayload
@@ -30,9 +32,6 @@ from .schemas import ProviderProfileInput
 from .schemas import ProviderProfileRecord
 from .schemas import ProviderType
 from .store import AppStore
-
-PDF_SIGNATURE = b"%PDF-"
-DOCX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
 def _provider_label(provider_type: ProviderType) -> str:
@@ -83,35 +82,6 @@ def _build_payload_from_form(
             save_auto_extracted_glossary=bool(save_glossary),
         ),
     )
-
-
-def _validate_upload(upload: UploadFile, content: bytes) -> None:
-    filename = upload.filename or "upload"
-    suffix = Path(filename).suffix.lower()
-    content_type = (upload.content_type or "").lower()
-
-    if suffix == ".docx" or content_type == DOCX_CONTENT_TYPE:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"{filename} is a DOCX file. This app currently accepts PDF input only. "
-                "Convert the document to PDF before queueing it."
-            ),
-        )
-
-    if suffix and suffix != ".pdf" and not content.startswith(PDF_SIGNATURE):
-        raise HTTPException(
-            status_code=400,
-            detail=f"{filename} is not a supported input file. Only PDF files can be queued right now.",
-        )
-
-    if not content.startswith(PDF_SIGNATURE):
-        raise HTTPException(
-            status_code=400,
-            detail=f"{filename} is not a valid PDF file. Only PDF files can be queued right now.",
-        )
-
-
 def _serialize_profile(profile: ProviderProfileRecord) -> dict[str, Any]:
     config = profile.config
     payload = {
@@ -372,7 +342,10 @@ def create_app() -> FastAPI:
             for upload in files:
                 suffix = Path(upload.filename or "upload.pdf").suffix or ".pdf"
                 content = await upload.read()
-                _validate_upload(upload, content)
+                try:
+                    validate_uploaded_file(upload.filename or "upload", content, upload.content_type)
+                except UnsupportedInputError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc)) from exc
                 with tempfile.NamedTemporaryFile(
                     dir=paths.STATE_DIR,
                     suffix=suffix,
@@ -403,6 +376,8 @@ def create_app() -> FastAPI:
             job = store.clone_job_for_retry(job_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Job not found") from exc
+        except UnsupportedInputError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return _serialize_job(store, job.id, include_details=True)
 
     @app.get("/api/jobs/{job_id}/events")
