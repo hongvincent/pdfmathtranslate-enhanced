@@ -16,8 +16,8 @@ import fitz
 
 from .crypto import decrypt_text
 from .crypto import encrypt_text
-from .file_validation import PDF_SIGNATURE
-from .file_validation import validate_retry_source_file
+from .file_validation import PreparedInputFile
+from .file_validation import prepare_retry_source_file
 from .paths import ARTIFACTS_DIR
 from .paths import DATABASE_PATH
 from .paths import DEFAULT_TIMEOUT_SECONDS
@@ -666,7 +666,7 @@ class AppStore:
     def create_job(
         self,
         payload: JobCreatePayload,
-        source_files: list[Path],
+        source_files: list[Path | PreparedInputFile],
     ) -> tuple[JobRecord, bool]:
         runtime_profile = self.get_profile_runtime_payload(payload.profile_id)
         now = to_iso()
@@ -688,14 +688,23 @@ class AppStore:
         file_hashes: list[str] = []
         prepared_files: list[dict[str, Any]] = []
         for index, source_file in enumerate(source_files):
-            destination = upload_dir / f"{index:02d}-{sanitize_name(source_file.name)}"
-            shutil.copy2(source_file, destination)
+            if isinstance(source_file, PreparedInputFile):
+                source_path = source_file.path
+                original_name = source_file.original_name
+                storage_name = source_file.storage_name
+            else:
+                source_path = source_file
+                original_name = source_file.name
+                storage_name = source_file.name
+
+            destination = upload_dir / f"{index:02d}-{sanitize_name(storage_name)}"
+            shutil.copy2(source_path, destination)
             file_hash = sha256_file(destination)
             file_hashes.append(file_hash)
             prepared_files.append(
                 {
                     "id": str(uuid.uuid4()),
-                    "original_name": source_file.name,
+                    "original_name": original_name,
                     "storage_path": str(destination),
                     "file_hash": file_hash,
                     "size_bytes": destination.stat().st_size,
@@ -784,14 +793,17 @@ class AppStore:
         new_job_id = str(uuid.uuid4())
         now = to_iso()
         options = loads(bundle.job["options_json"], {})
-        for file_row in bundle.files:
-            original_path = Path(file_row["storage_path"])
-            with original_path.open("rb") as handle:
-                header = handle.read(len(PDF_SIGNATURE))
-            validate_retry_source_file(file_row["original_name"], header)
-
         new_upload_dir = UPLOADS_DIR / new_job_id
         new_upload_dir.mkdir(parents=True, exist_ok=True)
+        prepared_dir = new_upload_dir / ".prepared"
+        prepared_files: list[tuple[dict[str, Any], PreparedInputFile]] = []
+        for file_row in bundle.files:
+            prepared = prepare_retry_source_file(
+                Path(file_row["storage_path"]),
+                file_row["original_name"],
+                prepared_dir / file_row["id"],
+            )
+            prepared_files.append((file_row, prepared))
         with self.connect() as conn:
             conn.execute(
                 """
@@ -813,10 +825,11 @@ class AppStore:
                     job_id,
                 ),
             )
-            for file_row in bundle.files:
-                original_path = Path(file_row["storage_path"])
-                new_path = new_upload_dir / sanitize_name(file_row["original_name"])
-                shutil.copy2(original_path, new_path)
+            for file_row, prepared in prepared_files:
+                new_path = new_upload_dir / (
+                    f"{int(file_row['sort_order']):02d}-{sanitize_name(prepared.storage_name)}"
+                )
+                shutil.copy2(prepared.path, new_path)
                 conn.execute(
                     """
                     INSERT INTO job_files (
@@ -839,6 +852,7 @@ class AppStore:
                         now,
                     ),
                 )
+        shutil.rmtree(prepared_dir, ignore_errors=True)
         self.append_event(new_job_id, "retried", f"Retry created from job {job_id}")
         job = self.get_job(new_job_id)
         assert job is not None

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 import tempfile
 import time
-from contextlib import suppress
 from pathlib import Path
 from typing import Annotated
 from typing import Any
@@ -22,8 +22,9 @@ from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 
 from . import paths
+from .file_validation import PreparedInputFile
 from .file_validation import UnsupportedInputError
-from .file_validation import validate_uploaded_file
+from .file_validation import prepare_uploaded_file
 from .providers import validate_profile
 from .schemas import ArtifactKind
 from .schemas import JobCreatePayload
@@ -319,7 +320,7 @@ def create_app() -> FastAPI:
         save_glossary: Annotated[bool | None, Form()] = None,
     ):
         if not files:
-            raise HTTPException(status_code=400, detail="At least one PDF file is required")
+            raise HTTPException(status_code=400, detail="At least one file is required")
 
         if payload:
             try:
@@ -337,31 +338,36 @@ def create_app() -> FastAPI:
                 save_glossary,
             )
 
-        temp_paths: list[Path] = []
+        prepared_files: list[PreparedInputFile] = []
+        temp_dirs: list[Path] = []
         try:
             for upload in files:
-                suffix = Path(upload.filename or "upload.pdf").suffix or ".pdf"
                 content = await upload.read()
+                temp_dir = Path(
+                    tempfile.mkdtemp(
+                        dir=paths.STATE_DIR,
+                        prefix="upload-",
+                    )
+                )
+                temp_dirs.append(temp_dir)
                 try:
-                    validate_uploaded_file(upload.filename or "upload", content, upload.content_type)
+                    prepared = prepare_uploaded_file(
+                        upload.filename or "upload",
+                        content,
+                        upload.content_type,
+                        temp_dir,
+                    )
                 except UnsupportedInputError as exc:
                     raise HTTPException(status_code=400, detail=str(exc)) from exc
-                with tempfile.NamedTemporaryFile(
-                    dir=paths.STATE_DIR,
-                    suffix=suffix,
-                    delete=False,
-                ) as temp_file:
-                    temp_file.write(content)
-                    temp_paths.append(Path(temp_file.name))
-            job, duplicate = store.create_job(parsed_payload, temp_paths)
+                prepared_files.append(prepared)
+            job, duplicate = store.create_job(parsed_payload, prepared_files)
             return {
                 "job": _serialize_job(store, job.id, include_details=True),
                 "duplicate": duplicate,
             }
         finally:
-            for temp_path in temp_paths:
-                with suppress(FileNotFoundError):
-                    temp_path.unlink()
+            for temp_dir in temp_dirs:
+                shutil.rmtree(temp_dir, ignore_errors=True)
 
     @app.post("/api/jobs/{job_id}/cancel")
     async def cancel_job(job_id: str):
@@ -457,7 +463,13 @@ def create_app() -> FastAPI:
             if path.startswith("api/"):
                 raise HTTPException(status_code=404, detail="Not found")
             index_path = paths.FRONTEND_DIST_DIR / "index.html"
-            return HTMLResponse(index_path.read_text(encoding="utf-8"))
+            return HTMLResponse(
+                index_path.read_text(encoding="utf-8"),
+                headers={
+                    "Cache-Control": "no-store, max-age=0",
+                    "Pragma": "no-cache",
+                },
+            )
 
     else:
         @app.get("/", response_class=JSONResponse)

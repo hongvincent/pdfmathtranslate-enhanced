@@ -36,7 +36,7 @@ const heroCopy: Record<
   },
   "new-job": {
     title: "Launch a new translation batch",
-    subtitle: "Upload one or many PDFs, pick a provider preset, and send the batch to `/api/jobs`.",
+    subtitle: "Upload PDFs or supported source files, let the backend auto-convert when needed, and send the batch to `/api/jobs`.",
   },
   profiles: {
     title: "Curate provider presets",
@@ -137,7 +137,7 @@ function App() {
         setSelectedJobId(created.id);
       }
     });
-    setNotice(`Queued ${input.files.length} PDF${input.files.length > 1 ? "s" : ""} for translation.`);
+    setNotice(`Queued ${input.files.length} file${input.files.length > 1 ? "s" : ""} for translation.`);
   }
 
   async function handleSaveProfile(input: Parameters<typeof saveProfile>[0]) {

@@ -45,7 +45,7 @@ export interface ProviderProfile {
   isDefault?: boolean;
   validationStatus?: string;
   validationError?: string;
-  validatedModels?: string[];
+  validatedModels: string[];
   createdAt?: string;
   updatedAt?: string;
 }

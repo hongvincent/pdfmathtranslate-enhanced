@@ -517,6 +517,7 @@ export const api = {
       model: profile.model,
       modelId: profile.modelId,
       isDefault: profile.isDefault,
+      validatedModels: [],
     };
   },
 
@@ -533,6 +534,7 @@ export const api = {
       model: profile.model,
       modelId: profile.modelId,
       isDefault: profile.isDefault,
+      validatedModels: [],
     };
   },
 

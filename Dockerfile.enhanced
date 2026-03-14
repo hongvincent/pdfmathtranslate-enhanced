@@ -19,8 +19,14 @@ ENV PDF2ZH_ENHANCED_FRONTEND_DIST=/app/frontend/dist
 RUN apt-get update && \
     apt-get install --no-install-recommends -y \
       build-essential \
+      fonts-dejavu-core \
       libgl1 \
       libglib2.0-0 \
+      libreoffice-nogui \
+      libreoffice-writer-nogui \
+      libreoffice-calc-nogui \
+      libreoffice-impress-nogui \
+      libreoffice-draw-nogui \
       libsm6 \
       libxext6 \
       libxrender1 && \

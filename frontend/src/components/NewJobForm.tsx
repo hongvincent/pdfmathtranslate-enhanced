@@ -3,6 +3,7 @@ import type { DragEvent, FormEvent } from "react";
 import { formatBytes } from "../lib/format";
 import {
   formatUploadValidationMessage,
+  SUPPORTED_UPLOAD_ACCEPT,
   validateUploadFiles,
 } from "../lib/fileValidation";
 import type {
@@ -133,7 +134,7 @@ export function NewJobForm(props: {
         <div className="section-heading">
           <div>
             <span className="eyebrow">New Job</span>
-            <h2>Queue one or many PDFs</h2>
+            <h2>Queue one or many source files</h2>
           </div>
           <div className="section-heading__meta">Multipart upload</div>
         </div>
@@ -148,7 +149,7 @@ export function NewJobForm(props: {
           >
             <input
               type="file"
-              accept=".pdf,application/pdf"
+              accept={SUPPORTED_UPLOAD_ACCEPT}
               multiple
               onChange={(event) => {
                 if (event.target.files) {
@@ -156,10 +157,10 @@ export function NewJobForm(props: {
                 }
               }}
             />
-            <strong>Drop PDFs here or browse locally</strong>
+            <strong>Drop PDFs, Office docs, text files, or images here</strong>
             <span>
-              Multi-file batches stay together under one queue action so you can
-              watch throughput and artifact generation in one place.
+              Non-PDF uploads are converted to PDF automatically before they enter
+              the translation queue.
             </span>
           </label>
 
@@ -167,7 +168,7 @@ export function NewJobForm(props: {
 
           <div className="file-list">
             {files.length === 0 ? (
-              <p className="subtle-copy">No PDFs selected yet.</p>
+              <p className="subtle-copy">No source files selected yet.</p>
             ) : (
               files.map((file) => (
                 <div key={`${file.name}:${file.lastModified}`} className="file-chip">

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, normalizeEvent } from "../api/client";
 import type {
   JobArtifact,
@@ -13,6 +13,7 @@ import type {
 } from "../types";
 
 const LIVE_STATUSES = new Set(["queued", "validating", "running", "paused"]);
+const SNAPSHOT_REQUEST_COOLDOWN_MS = 1500;
 
 type ActionState = {
   creatingJob: boolean;
@@ -21,6 +22,12 @@ type ActionState = {
   deletingProfileId: string | null;
   cancellingJobId: string | null;
   retryingJobId: string | null;
+};
+
+type SnapshotRequestState = {
+  jobId: string | null;
+  lastStartedAt: number;
+  promise: Promise<void> | null;
 };
 
 function dedupeEvents(events: JobEvent[]): JobEvent[] {
@@ -67,6 +74,13 @@ export function useDashboardData(options: {
     cancellingJobId: null,
     retryingJobId: null,
   });
+  const snapshotRequestRef = useRef<SnapshotRequestState>({
+    jobId: null,
+    lastStartedAt: 0,
+    promise: null,
+  });
+  const selectedSummary = jobs.find((job) => job.id === selectedJobId);
+  const selectedJobStatus = selectedSummary?.status;
 
   async function loadOverview(silent = false) {
     if (!silent) {
@@ -107,32 +121,72 @@ export function useDashboardData(options: {
     setLoading(false);
   }
 
-  async function loadSelectedSnapshot(jobId: string) {
-    try {
-      const [detail, artifacts, events] = await Promise.all([
-        api.getJob(jobId),
-        api.listJobArtifacts(jobId),
-        api.listJobEvents(jobId),
-      ]);
+  async function loadSelectedSnapshot(
+    jobId: string,
+    options?: { force?: boolean },
+  ) {
+    const force = options?.force ?? false;
+    const nextStartedAt = Date.now();
+    const currentRequest = snapshotRequestRef.current;
 
-      setSelectedJob({
-        ...detail,
-        artifacts,
-        recentEvents: events,
-      });
-      setSelectedArtifacts(artifacts);
-      setSelectedEvents(events);
-      setJobs((currentJobs) =>
-        currentJobs.map((job) => (job.id === detail.id ? { ...job, ...detail } : job)),
-      );
-      setError(null);
-    } catch (nextError) {
-      setError(
-        nextError instanceof Error
-          ? nextError.message
-          : "Failed to load the selected job.",
-      );
+    if (currentRequest.jobId === jobId && currentRequest.promise) {
+      return currentRequest.promise;
     }
+
+    if (
+      !force &&
+      currentRequest.jobId === jobId &&
+      nextStartedAt - currentRequest.lastStartedAt < SNAPSHOT_REQUEST_COOLDOWN_MS
+    ) {
+      return Promise.resolve();
+    }
+
+    const request = (async () => {
+      try {
+        const [detail, artifacts, events] = await Promise.all([
+          api.getJob(jobId),
+          api.listJobArtifacts(jobId),
+          api.listJobEvents(jobId),
+        ]);
+
+        setSelectedJob({
+          ...detail,
+          artifacts,
+          recentEvents: events,
+        });
+        setSelectedArtifacts(artifacts);
+        setSelectedEvents(events);
+        setJobs((currentJobs) =>
+          currentJobs.map((job) => (job.id === detail.id ? { ...job, ...detail } : job)),
+        );
+        setError(null);
+      } catch (nextError) {
+        setError(
+          nextError instanceof Error
+            ? nextError.message
+            : "Failed to load the selected job.",
+        );
+      } finally {
+        if (
+          snapshotRequestRef.current.jobId === jobId &&
+          snapshotRequestRef.current.lastStartedAt === nextStartedAt
+        ) {
+          snapshotRequestRef.current = {
+            jobId,
+            lastStartedAt: nextStartedAt,
+            promise: null,
+          };
+        }
+      }
+    })();
+
+    snapshotRequestRef.current = {
+      jobId,
+      lastStartedAt: nextStartedAt,
+      promise: request,
+    };
+
+    return request;
   }
 
   useEffect(() => {
@@ -186,11 +240,10 @@ export function useDashboardData(options: {
 
     void loadSelectedSnapshot(selectedJobId);
 
-    const selectedSummary = jobs.find((job) => job.id === selectedJobId);
     const shouldPoll =
       !preferEventStream ||
-      !selectedSummary ||
-      !LIVE_STATUSES.has(selectedSummary.status);
+      !selectedJobStatus ||
+      !LIVE_STATUSES.has(selectedJobStatus);
 
     if (!shouldPoll) {
       return;
@@ -204,15 +257,14 @@ export function useDashboardData(options: {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [jobs, preferEventStream, refreshMs, selectedJobId]);
+  }, [preferEventStream, refreshMs, selectedJobId, selectedJobStatus]);
 
   useEffect(() => {
-    const selectedSummary = jobs.find((job) => job.id === selectedJobId);
     const canStream =
       preferEventStream &&
       selectedJobId &&
-      selectedSummary &&
-      LIVE_STATUSES.has(selectedSummary.status) &&
+      selectedJobStatus &&
+      LIVE_STATUSES.has(selectedJobStatus) &&
       typeof EventSource !== "undefined";
 
     if (!canStream || !selectedJobId) {
@@ -288,7 +340,7 @@ export function useDashboardData(options: {
         );
 
         if (nextEvent.type === "finish" || nextEvent.type === "error") {
-          void loadSelectedSnapshot(selectedJobId);
+          void loadSelectedSnapshot(selectedJobId, { force: true });
         }
       } catch {
         setStreamState("fallback");
@@ -303,13 +355,13 @@ export function useDashboardData(options: {
     return () => {
       eventSource.close();
     };
-  }, [jobs, preferEventStream, selectedJobId]);
+  }, [preferEventStream, selectedJobId, selectedJobStatus]);
 
   async function refreshAll() {
     setRefreshing(true);
     await loadOverview(true);
     if (selectedJobId) {
-      await loadSelectedSnapshot(selectedJobId);
+      await loadSelectedSnapshot(selectedJobId, { force: true });
     }
     setRefreshing(false);
   }
@@ -322,7 +374,7 @@ export function useDashboardData(options: {
       await loadOverview(true);
       if (job?.id) {
         setSelectedJobId(job.id);
-        await loadSelectedSnapshot(job.id);
+        await loadSelectedSnapshot(job.id, { force: true });
       }
       setError(null);
       return job;
@@ -413,7 +465,7 @@ export function useDashboardData(options: {
     try {
       const job = await api.cancelJob(jobId);
       await loadOverview(true);
-      await loadSelectedSnapshot(job.id);
+      await loadSelectedSnapshot(job.id, { force: true });
       setError(null);
       return job;
     } catch (nextError) {
@@ -433,7 +485,7 @@ export function useDashboardData(options: {
       const job = await api.retryJob(jobId);
       await loadOverview(true);
       setSelectedJobId(job.id);
-      await loadSelectedSnapshot(job.id);
+      await loadSelectedSnapshot(job.id, { force: true });
       setError(null);
       return job;
     } catch (nextError) {
