@@ -1,4 +1,8 @@
 import { clampProgress } from "../lib/format";
+import {
+  formatUploadValidationMessage,
+  validateUploadFiles,
+} from "../lib/fileValidation";
 import type {
   JobArtifact,
   JobDetail,
@@ -133,11 +137,6 @@ function inferEventLevel(type?: string, error?: string): JobEvent["level"] {
 function basename(path: string): string {
   const parts = path.split(/[\\/]/);
   return parts[parts.length - 1] ?? path;
-}
-
-function isPdfFile(file: File): boolean {
-  const lowerName = file.name.toLowerCase();
-  return lowerName.endsWith(".pdf") || file.type === "application/pdf";
 }
 
 function normalizeFiles(payload: JsonRecord) {
@@ -571,12 +570,9 @@ export const api = {
       throw new Error("Choose a provider profile before queueing a job.");
     }
 
-    const invalidFiles = input.files.filter((file) => !isPdfFile(file));
+    const invalidFiles = await validateUploadFiles(input.files);
     if (invalidFiles.length > 0) {
-      const names = invalidFiles.map((file) => file.name).join(", ");
-      throw new Error(
-        `${names} ${invalidFiles.length === 1 ? "is" : "are"} not supported. Convert DOCX or other formats to PDF before queueing them.`,
-      );
+      throw new Error(formatUploadValidationMessage(invalidFiles));
     }
 
     const payload = {

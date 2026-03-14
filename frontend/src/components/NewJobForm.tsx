@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import type { DragEvent, FormEvent } from "react";
 import { formatBytes } from "../lib/format";
+import {
+  formatUploadValidationMessage,
+  validateUploadFiles,
+} from "../lib/fileValidation";
 import type {
   NewJobInput,
   OutputMode,
@@ -65,42 +69,34 @@ export function NewJobForm(props: {
     setProfileId(defaultProfile.id);
   }, [defaultProfile, profileId]);
 
-  function mergeFiles(nextFiles: FileList | File[]) {
-    const accepted: File[] = [];
-    const rejected: string[] = [];
-
-    Array.from(nextFiles).forEach((file) => {
-      const lowerName = file.name.toLowerCase();
-      const isPdf = lowerName.endsWith(".pdf") || file.type === "application/pdf";
-      if (isPdf) {
-        accepted.push(file);
-      } else {
-        rejected.push(file.name);
-      }
-    });
+  async function mergeFiles(nextFiles: FileList | File[]) {
+    const candidates = Array.from(nextFiles);
+    const rejected = await validateUploadFiles(candidates);
+    const rejectedFiles = new Set(rejected.map((error) => error.file));
+    const accepted = candidates.filter((file) => !rejectedFiles.has(file));
 
     setSelectionError(
-      rejected.length > 0
-        ? `${rejected.join(", ")} ${rejected.length === 1 ? "is" : "are"} not supported. Convert DOCX or other formats to PDF first.`
-        : null,
+      rejected.length > 0 ? formatUploadValidationMessage(rejected) : null,
     );
 
     if (accepted.length === 0) {
       return;
     }
 
-    const merged = new Map<string, File>();
-    [...files, ...accepted].forEach((file) => {
-      merged.set(`${file.name}:${file.size}:${file.lastModified}`, file);
+    setFiles((current) => {
+      const merged = new Map<string, File>();
+      [...current, ...accepted].forEach((file) => {
+        merged.set(`${file.name}:${file.size}:${file.lastModified}`, file);
+      });
+      return Array.from(merged.values());
     });
-    setFiles(Array.from(merged.values()));
   }
 
   function handleDrop(event: DragEvent<HTMLLabelElement>) {
     event.preventDefault();
     setDragging(false);
     if (event.dataTransfer.files.length > 0) {
-      mergeFiles(event.dataTransfer.files);
+      void mergeFiles(event.dataTransfer.files);
     }
   }
 
@@ -156,7 +152,7 @@ export function NewJobForm(props: {
               multiple
               onChange={(event) => {
                 if (event.target.files) {
-                  mergeFiles(event.target.files);
+                  void mergeFiles(event.target.files);
                 }
               }}
             />
