@@ -48,6 +48,41 @@ PDF scientific paper translation and bilingual comparison. Based on [BabelDOC](h
 >
 > Due to the maintainers' limited energy, we do not provide any form of usage assistance or problem-solving. Related issues will be closed directly! (Pull requests to improve project documentation are welcome; bugs or friendly issues that follow the issue template are not affected by this)
 
+## Enhanced Local Dashboard
+
+This fork adds a local single-user product layer on top of `PDFMathTranslate-next`:
+
+- FastAPI + React/Vite dashboard at `http://localhost:7860`
+- Persistent SQLite queue with retry, cancel, history, SSE job feeds, and artifact downloads
+- Encrypted provider profile storage for OpenAI and Amazon Bedrock
+- GPT-5.4 default OpenAI profile with optional snapshot pinning
+- Docker Desktop workflow with shared `/data` persistence across app restarts
+
+### Quick Start with Docker Desktop
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+```
+
+Then open `http://localhost:7860`.
+
+Persistent state lives in the named Docker volume `pdfmathtranslate_data` and includes:
+
+- `app.db`
+- uploaded PDFs
+- generated output artifacts
+- logs
+- encrypted provider secrets
+
+To use Bedrock with mounted AWS profiles in Docker Desktop, set `PDF2ZH_AWS_DIR` in `.env`, for example:
+
+```bash
+PDF2ZH_AWS_DIR=$HOME/.aws
+```
+
+This fork keeps the upstream codebase and AGPL-3.0 license intact. If you publish this as a networked service beyond local single-user use, make sure your deployment and source-availability obligations remain AGPL compliant.
+
 
 For details on how to contribute, please consult the [Contribution Guide](https://pdf2zh-next.com/community/Contribution-Guide.html).
 

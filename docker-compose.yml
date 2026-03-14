@@ -1,0 +1,32 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.enhanced
+    image: pdfmathtranslate-enhanced:local
+    command: ["pdf2zh-enhanced-app"]
+    environment:
+      PDF2ZH_ENHANCED_DATA_DIR: /data
+      PDF2ZH_ENHANCED_FRONTEND_DIST: /app/frontend/dist
+    ports:
+      - "${PDF2ZH_PORT:-7860}:7860"
+    volumes:
+      - pdfmathtranslate_data:/data
+      - ${PDF2ZH_AWS_DIR:-./.docker/aws-empty}:/root/.aws:ro
+    restart: unless-stopped
+
+  worker:
+    image: pdfmathtranslate-enhanced:local
+    command: ["pdf2zh-enhanced-worker"]
+    depends_on:
+      - app
+    environment:
+      PDF2ZH_ENHANCED_DATA_DIR: /data
+      PDF2ZH_ENHANCED_FRONTEND_DIST: /app/frontend/dist
+    volumes:
+      - pdfmathtranslate_data:/data
+      - ${PDF2ZH_AWS_DIR:-./.docker/aws-empty}:/root/.aws:ro
+    restart: unless-stopped
+
+volumes:
+  pdfmathtranslate_data:

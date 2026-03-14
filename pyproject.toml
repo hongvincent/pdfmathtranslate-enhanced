@@ -46,6 +46,9 @@ dependencies = [
     "chardet>=5.2.0",
     "gradio-i18n==0.3.4", # since we have hooked it for language selection
     "pyyaml>=6.0.2",
+    "boto3>=1.39.0",
+    "cryptography>=44.0.0",
+    "python-multipart>=0.0.20",
 ]
 
 [dependency-groups]
@@ -71,10 +74,15 @@ Homepage = "https://github.com/PDFMathTranslate/PDFMathTranslate-next"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.wheel]
+packages = ["pdf2zh_next", "pdf2zh_next_enhanced"]
+
 [project.scripts]
 pdf2zh = "pdf2zh_next.main:cli"
 pdf2zh2 = "pdf2zh_next.main:cli"
 pdf2zh_next = "pdf2zh_next.main:cli"
+pdf2zh-enhanced-app = "pdf2zh_next_enhanced.main:cli"
+pdf2zh-enhanced-worker = "pdf2zh_next_enhanced.worker:cli"
 
 [tool.flake8]
 ignore = ["E203", "E261", "E501", "W503", "E741"]

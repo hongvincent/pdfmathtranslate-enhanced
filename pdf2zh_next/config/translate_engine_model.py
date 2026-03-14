@@ -812,6 +812,114 @@ class AliyunDashScopeSettings(BaseModel):
 GUI_PASSWORD_FIELDS.append("aliyun_dashscope_api_key")
 
 
+class BedrockSettings(BaseModel):
+    """Amazon Bedrock settings"""
+
+    translate_engine_type: Literal["Bedrock"] = Field(default="Bedrock")
+    support_llm: Literal["yes", "no"] = Field(
+        default="yes", description="Whether the translator supports LLM"
+    )
+
+    bedrock_model_id: str = Field(
+        default="amazon.nova-lite-v1:0", description="Bedrock model ID to use"
+    )
+    bedrock_region: str = Field(
+        default="us-east-1", description="AWS region for Bedrock Runtime"
+    )
+    bedrock_auth_mode: Literal["default", "profile", "access_key"] = Field(
+        default="default",
+        description="Credential source for Bedrock Runtime (default/profile/access_key)",
+    )
+    bedrock_access_key_id: str | None = Field(
+        default=None, description="AWS access key ID for Bedrock Runtime"
+    )
+    bedrock_secret_access_key: str | None = Field(
+        default=None, description="AWS secret access key for Bedrock Runtime"
+    )
+    bedrock_session_token: str | None = Field(
+        default=None, description="AWS session token for Bedrock Runtime"
+    )
+    bedrock_profile_name: str | None = Field(
+        default=None, description="AWS profile name for Bedrock Runtime"
+    )
+    bedrock_timeout: str | None = Field(
+        default=None, description="Timeout (seconds) for Bedrock Runtime"
+    )
+    bedrock_temperature: str | None = Field(
+        default=None, description="Temperature for Bedrock Runtime"
+    )
+
+    def validate_settings(self) -> None:
+        self.bedrock_model_id = _clean_string(self.bedrock_model_id)
+        self.bedrock_region = _clean_string(self.bedrock_region)
+        self.bedrock_access_key_id = _clean_string(self.bedrock_access_key_id)
+        self.bedrock_secret_access_key = _clean_string(self.bedrock_secret_access_key)
+        self.bedrock_session_token = _clean_string(self.bedrock_session_token)
+        self.bedrock_profile_name = _clean_string(self.bedrock_profile_name)
+        self.bedrock_timeout = _check_if_positive_float(
+            _clean_string(self.bedrock_timeout),
+            field="Timeout",
+        )
+        self.bedrock_temperature = _clean_string(self.bedrock_temperature)
+
+        if not self.bedrock_model_id:
+            raise ValueError("Bedrock model ID is required")
+        if not self.bedrock_region:
+            raise ValueError("Bedrock region is required")
+
+        if self.bedrock_temperature is not None:
+            try:
+                temperature = float(self.bedrock_temperature)
+            except ValueError as e:
+                raise ValueError("Temperature must be a float") from e
+            if temperature < 0 or temperature > 1:
+                raise ValueError("Temperature must be between 0 and 1")
+
+        if self.bedrock_auth_mode == "default":
+            if any(
+                (
+                    self.bedrock_access_key_id,
+                    self.bedrock_secret_access_key,
+                    self.bedrock_session_token,
+                    self.bedrock_profile_name,
+                )
+            ):
+                raise ValueError(
+                    "Credential fields must be empty when auth mode is default"
+                )
+        elif self.bedrock_auth_mode == "profile":
+            if not self.bedrock_profile_name:
+                raise ValueError("Profile name is required when auth mode is profile")
+            if any(
+                (
+                    self.bedrock_access_key_id,
+                    self.bedrock_secret_access_key,
+                    self.bedrock_session_token,
+                )
+            ):
+                raise ValueError(
+                    "Access key credentials must be empty when auth mode is profile"
+                )
+        elif self.bedrock_auth_mode == "access_key":
+            if not self.bedrock_access_key_id:
+                raise ValueError(
+                    "Access key ID is required when auth mode is access_key"
+                )
+            if not self.bedrock_secret_access_key:
+                raise ValueError(
+                    "Secret access key is required when auth mode is access_key"
+                )
+            if self.bedrock_profile_name:
+                raise ValueError(
+                    "Profile name must be empty when auth mode is access_key"
+                )
+
+
+GUI_PASSWORD_FIELDS.append("bedrock_access_key_id")
+GUI_PASSWORD_FIELDS.append("bedrock_secret_access_key")
+GUI_PASSWORD_FIELDS.append("bedrock_session_token")
+
+
 class ClaudeCodeSettings(BaseModel):
     """Claude Code settings"""
 
@@ -854,6 +962,7 @@ TRANSLATION_ENGINE_SETTING_TYPE: TypeAlias = (
     | GroqSettings
     | QwenMtSettings
     | OpenAICompatibleSettings
+    | BedrockSettings
     | ClaudeCodeSettings
 )
 
