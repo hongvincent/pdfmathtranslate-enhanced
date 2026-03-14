@@ -55,6 +55,7 @@ export function NewJobForm(props: {
     ),
   );
   const [dragging, setDragging] = useState(false);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!defaultProfile || profileId) {
@@ -65,8 +66,31 @@ export function NewJobForm(props: {
   }, [defaultProfile, profileId]);
 
   function mergeFiles(nextFiles: FileList | File[]) {
+    const accepted: File[] = [];
+    const rejected: string[] = [];
+
+    Array.from(nextFiles).forEach((file) => {
+      const lowerName = file.name.toLowerCase();
+      const isPdf = lowerName.endsWith(".pdf") || file.type === "application/pdf";
+      if (isPdf) {
+        accepted.push(file);
+      } else {
+        rejected.push(file.name);
+      }
+    });
+
+    setSelectionError(
+      rejected.length > 0
+        ? `${rejected.join(", ")} ${rejected.length === 1 ? "is" : "are"} not supported. Convert DOCX or other formats to PDF first.`
+        : null,
+    );
+
+    if (accepted.length === 0) {
+      return;
+    }
+
     const merged = new Map<string, File>();
-    [...files, ...Array.from(nextFiles)].forEach((file) => {
+    [...files, ...accepted].forEach((file) => {
       merged.set(`${file.name}:${file.size}:${file.lastModified}`, file);
     });
     setFiles(Array.from(merged.values()));
@@ -101,6 +125,7 @@ export function NewJobForm(props: {
     setPages("");
     setQps("");
     setSaveGlossary(false);
+    setSelectionError(null);
   }
 
   const selectedProfile = profiles.find((profile) => profile.id === profileId);
@@ -127,7 +152,7 @@ export function NewJobForm(props: {
           >
             <input
               type="file"
-              accept="application/pdf"
+              accept=".pdf,application/pdf"
               multiple
               onChange={(event) => {
                 if (event.target.files) {
@@ -141,6 +166,8 @@ export function NewJobForm(props: {
               watch throughput and artifact generation in one place.
             </span>
           </label>
+
+          {selectionError ? <p className="inline-error">{selectionError}</p> : null}
 
           <div className="file-list">
             {files.length === 0 ? (

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 
 from fastapi.testclient import TestClient
@@ -143,3 +144,49 @@ def test_job_submission_events_and_duplicate_detection(tmp_path, monkeypatch):
     artifacts = client.get(f"/api/jobs/{job_id}/artifacts")
     assert artifacts.status_code == 200
     assert artifacts.json() == []
+
+
+def test_job_submission_rejects_docx_upload(tmp_path, monkeypatch):
+    _patch_data_paths(tmp_path, monkeypatch)
+    client = TestClient(create_app())
+
+    profile_response = client.post(
+        "/api/provider-profiles",
+        json={
+            "provider_type": "openai",
+            "name": "DOCX Guard",
+            "model": "gpt-5.4",
+            "api_key": "sk-docx-guard",
+        },
+    )
+    profile_id = profile_response.json()["id"]
+
+    response = client.post(
+        "/api/jobs",
+        files={
+            "files": (
+                "paper.docx",
+                io.BytesIO(b"PK\x03\x04fake-docx"),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+        data={
+            "payload": json.dumps(
+                {
+                    "profile_id": profile_id,
+                    "options": {
+                        "lang_in": "en",
+                        "lang_out": "ko",
+                        "qps": 1,
+                        "no_mono": True,
+                        "no_dual": False,
+                        "no_auto_extract_glossary": True,
+                        "save_auto_extracted_glossary": False,
+                    },
+                }
+            )
+        },
+    )
+
+    assert response.status_code == 400
+    assert "DOCX file" in response.json()["detail"]

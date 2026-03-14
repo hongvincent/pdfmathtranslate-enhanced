@@ -135,6 +135,11 @@ function basename(path: string): string {
   return parts[parts.length - 1] ?? path;
 }
 
+function isPdfFile(file: File): boolean {
+  const lowerName = file.name.toLowerCase();
+  return lowerName.endsWith(".pdf") || file.type === "application/pdf";
+}
+
 function normalizeFiles(payload: JsonRecord) {
   const files = readArray<unknown>(payload, "files");
   if (!files?.length) {
@@ -564,6 +569,14 @@ export const api = {
   async createJob(input: NewJobInput): Promise<JobDetail | null> {
     if (!input.profileId) {
       throw new Error("Choose a provider profile before queueing a job.");
+    }
+
+    const invalidFiles = input.files.filter((file) => !isPdfFile(file));
+    if (invalidFiles.length > 0) {
+      const names = invalidFiles.map((file) => file.name).join(", ");
+      throw new Error(
+        `${names} ${invalidFiles.length === 1 ? "is" : "are"} not supported. Convert DOCX or other formats to PDF before queueing them.`,
+      );
     }
 
     const payload = {

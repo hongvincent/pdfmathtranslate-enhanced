@@ -88,6 +88,7 @@ a {
 .sidebar__brand p,
 .hero p,
 .subtle-copy,
+.inline-error,
 .empty-state p,
 .metric-card p,
 .event-row small,
@@ -473,6 +474,11 @@ a {
 
 .dropzone input {
   display: none;
+}
+
+.inline-error {
+  margin: -0.25rem 0 0;
+  color: var(--error);
 }
 
 .file-list,

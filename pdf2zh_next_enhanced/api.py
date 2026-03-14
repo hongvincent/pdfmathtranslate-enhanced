@@ -31,6 +31,9 @@ from .schemas import ProviderProfileRecord
 from .schemas import ProviderType
 from .store import AppStore
 
+PDF_SIGNATURE = b"%PDF-"
+DOCX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
 
 def _provider_label(provider_type: ProviderType) -> str:
     if provider_type == ProviderType.OPENAI:
@@ -80,6 +83,33 @@ def _build_payload_from_form(
             save_auto_extracted_glossary=bool(save_glossary),
         ),
     )
+
+
+def _validate_upload(upload: UploadFile, content: bytes) -> None:
+    filename = upload.filename or "upload"
+    suffix = Path(filename).suffix.lower()
+    content_type = (upload.content_type or "").lower()
+
+    if suffix == ".docx" or content_type == DOCX_CONTENT_TYPE:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{filename} is a DOCX file. This app currently accepts PDF input only. "
+                "Convert the document to PDF before queueing it."
+            ),
+        )
+
+    if suffix and suffix != ".pdf" and not content.startswith(PDF_SIGNATURE):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{filename} is not a supported input file. Only PDF files can be queued right now.",
+        )
+
+    if not content.startswith(PDF_SIGNATURE):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{filename} is not a valid PDF file. Only PDF files can be queued right now.",
+        )
 
 
 def _serialize_profile(profile: ProviderProfileRecord) -> dict[str, Any]:
@@ -341,12 +371,13 @@ def create_app() -> FastAPI:
         try:
             for upload in files:
                 suffix = Path(upload.filename or "upload.pdf").suffix or ".pdf"
+                content = await upload.read()
+                _validate_upload(upload, content)
                 with tempfile.NamedTemporaryFile(
                     dir=paths.STATE_DIR,
                     suffix=suffix,
                     delete=False,
                 ) as temp_file:
-                    content = await upload.read()
                     temp_file.write(content)
                     temp_paths.append(Path(temp_file.name))
             job, duplicate = store.create_job(parsed_payload, temp_paths)
